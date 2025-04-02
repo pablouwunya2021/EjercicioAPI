@@ -1,85 +1,84 @@
 const express = require('express');
 const router = express.Router();
+const { Pool } = require('pg');
 
-// Almacenamiento en memoria
-let incidents = [];
-let idCounter = 1;
-
-// Validaciones
-const validateIncident = (incident) => {
-    if (!incident.reporter) {
-        throw new Error('El nombre del reportero es obligatorio');
-    }
-    if (!incident.description || incident.description.length < 10) {
-        throw new Error('La descripción debe tener al menos 10 caracteres');
-    }
-    if (incident.status && !['pendiente', 'en proceso', 'resuelto'].includes(incident.status)) {
-        throw new Error('Estado inválido');
-    }
-};
+// Configurar el pool de conexiones
+const pool = new Pool({
+    host: process.env.PGHOST,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    database: process.env.PGDATABASE,
+    port: process.env.PGPORT
+});
 
 // Crear nuevo incidente
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
-        const incident = {
-            id: idCounter++,
-            reporter: req.body.reporter,
-            description: req.body.description,
-            status: req.body.status || 'pendiente',
-            created_at: new Date()
-        };
-        
-        validateIncident(incident);
-        incidents.push(incident);
-        res.status(201).json(incident);
+        const { reporter, description, status = 'pendiente' } = req.body;
+        const result = await pool.query(
+            'INSERT INTO incidents (reporter, description, status) VALUES ($1, $2, $3) RETURNING *',
+            [reporter, description, status]
+        );
+        res.status(201).json(result.rows[0]);
     } catch (error) {
         res.status(400).json({ message: error.message });
     }
 });
 
 // Obtener todos los incidentes
-router.get('/', (req, res) => {
-    res.json(incidents);
+router.get('/', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM incidents');
+        res.json(result.rows);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
 });
 
 // Obtener incidente específico
-router.get('/:id', (req, res) => {
-    const incident = incidents.find(i => i.id === parseInt(req.params.id));
-    if (!incident) {
-        return res.status(404).json({ message: 'Incidente no encontrado' });
+router.get('/:id', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM incidents WHERE id = $1', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Incidente no encontrado' });
+        }
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
-    res.json(incident);
 });
 
 // Actualizar estado del incidente
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
     try {
-        const incident = incidents.find(i => i.id === parseInt(req.params.id));
-        if (!incident) {
-            return res.status(404).json({ message: 'Incidente no encontrado' });
-        }
-
-        // Solo permitir actualizar el status
-        if (!req.body.status) {
+        const { status } = req.body;
+        if (!status) {
             throw new Error('Debe proporcionar un estado');
         }
-        incident.status = req.body.status;
-        validateIncident(incident);
-        res.json(incident);
+        const result = await pool.query(
+            'UPDATE incidents SET status = $1 WHERE id = $2 RETURNING *',
+            [status, req.params.id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Incidente no encontrado' });
+        }
+        res.json(result.rows[0]);
     } catch (error) {
         res.status(400).json({ message: error.message });
     }
 });
 
 // Eliminar incidente
-router.delete('/:id', (req, res) => {
-    const incidentIndex = incidents.findIndex(i => i.id === parseInt(req.params.id));
-    if (incidentIndex === -1) {
-        return res.status(404).json({ message: 'Incidente no encontrado' });
+router.delete('/:id', async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM incidents WHERE id = $1 RETURNING *', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Incidente no encontrado' });
+        }
+        res.json({ message: 'Incidente eliminado' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
-    
-    incidents.splice(incidentIndex, 1);
-    res.json({ message: 'Incidente eliminado' });
 });
 
 module.exports = router;
