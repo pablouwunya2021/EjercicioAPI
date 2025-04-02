@@ -5,7 +5,7 @@
 1. **Clona o descarga el proyecto**:
    - Si estás usando Git:
      ```bash
-     git clone <url-del-repositorio>
+     git clone <https://github.com/pablouwunya2021/EjercicioAPI.git>
      cd EjercicioAPI
      ```
    - O descarga el código y descomprímelo en una carpeta.
